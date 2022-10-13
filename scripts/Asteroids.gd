@@ -21,7 +21,7 @@ func _ready():
 	$Area3d/CollisionShape3d.shape.radius = radius
 	$Label3d.position.y = radius
 	$Label3d.text = get_asteroid_field_name()
-	$LOD/CollisionShape3d.radius = lod_distance
+	$LOD/CollisionShape3d.shape.radius = lod_distance
 	
 	for i in range(max_density):
 		var asteroid = SphereMesh.new()
