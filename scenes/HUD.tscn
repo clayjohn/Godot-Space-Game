@@ -1,0 +1,363 @@
+[gd_scene load_steps=12 format=3 uid="uid://veq26e2a7gqe"]
+
+[ext_resource type="Script" path="res://scripts/HUD.gd" id="1"]
+
+[sub_resource type="Shader" id="1"]
+code = "shader_type canvas_item;
+render_mode blend_premul_alpha;
+
+uniform vec2 resolution = vec2(1920, 1080);
+uniform vec2 mouse = vec2(960, 540);
+uniform float exposure = 1.0;
+
+//SDF based checked: https://www.shadertoy.com/view/4dfXDn
+//By user: Maarten
+
+//////////////////////////////////////
+// Combine distance field functions //
+//////////////////////////////////////
+
+
+float smoothMerge(float d1, float d2, float k)
+{
+    float h = clamp(0.5 + 0.5*(d2 - d1)/k, 0.0, 1.0);
+    return mix(d2, d1, h) - k * h * (1.0-h);
+}
+
+
+float merge(float d1, float d2)
+{
+	return min(d1, d2);
+}
+
+
+float mergeExclude(float d1, float d2)
+{
+	return min(max(-d1, d2), max(-d2, d1));
+}
+
+
+float substract(float d1, float d2)
+{
+	return max(-d1, d2);
+}
+
+
+float intersect(float d1, float d2)
+{
+	return max(d1, d2);
+}
+
+
+//////////////////////////////
+// Rotation and position //
+//////////////////////////////
+
+
+vec2 rotateCCW(vec2 p, float a)
+{
+	mat2 m = mat2(vec2(cos(a), sin(a)), vec2(-sin(a), cos(a)));
+	return p * m;	
+}
+
+
+vec2 rotateCW(vec2 p, float a)
+{
+	mat2 m = mat2(vec2(cos(a), -sin(a)), vec2(sin(a), cos(a)));
+	return p * m;
+}
+
+
+vec2 translate(vec2 p, vec2 t)
+{
+	return p - t;
+}
+
+
+//////////////////////////////
+// Distance field functions //
+//////////////////////////////
+
+
+float pie(vec2 p, float angle)
+{
+	angle = radians(angle) / 2.0;
+	vec2 n = vec2(cos(angle), sin(angle));
+	return abs(p).x * n.x + p.y*n.y;
+}
+
+
+float circleDist(vec2 p, float radius)
+{
+	return length(p) - radius;
+}
+
+
+float triangleDist(vec2 p, float radius)
+{
+	return max(	abs(p).x * 0.866025 + 
+			   	p.y * 0.5, -p.y) 
+				-radius * 0.5;
+}
+
+
+float triangleDisth(vec2 p, float width, float height)
+{
+	vec2 n = normalize(vec2(height, width / 2.0));
+	return max(	abs(p).x*n.x + p.y*n.y - (height*n.y), -p.y);
+}
+
+
+float semiCircleDist(vec2 p, float radius, float angle, float width)
+{
+	width /= 2.0;
+	radius -= width;
+	return substract(pie(p, angle), 
+					 abs(circleDist(p, radius)) - width);
+}
+
+
+float boxDist(vec2 p, vec2 size, float radius)
+{
+	size -= vec2(radius);
+	vec2 d = abs(p) - size;
+  	return min(max(d.x, d.y), 0.0) + length(max(d, vec2(0.0))) - radius;
+}
+
+
+float lineDist(vec2 p, vec2 start, vec2 end, float width)
+{
+	vec2 dir = start - end;
+	float lngth = length(dir);
+	dir /= lngth;
+	vec2 proj = max(0.0, min(lngth, dot((start - p), dir))) * dir;
+	return length( (start - p) - proj ) - (width / 2.0);
+}
+
+
+///////////////////////
+// Masks for drawing //
+///////////////////////
+
+
+float fillMask(float dist)
+{
+	return clamp(-dist, 0.0, 1.0);
+}
+
+
+float innerBorderMask(float dist, float width)
+{
+	//dist += 1.0;
+	float alpha1 = clamp(dist + width, 0.0, 1.0);
+	float alpha2 = clamp(dist, 0.0, 1.0);
+	return alpha1 - alpha2;
+}
+
+
+float outerBorderMask(float dist, float width)
+{
+	//dist += 1.0;
+	float alpha1 = clamp(dist, 0.0, 1.0);
+	float alpha2 = clamp(dist - width, 0.0, 1.0);
+	return alpha1 - alpha2;
+}
+
+float corner(vec2 p) {
+	float dist = 20.0;
+	float len = 20.0;
+	float thick = 2.0;
+	return merge(lineDist(p, vec2(dist, dist), vec2(dist, dist+len), thick), lineDist(p, vec2(dist, dist), vec2(dist+len, dist), thick));
+}
+
+
+float fill(float x) {
+	return smoothstep(-2.0, 2.0, -x);
+}
+
+void fragment() {
+
+	vec2 uv = vec2(UV.x, 1.0-UV.y);
+	vec2 p = uv*resolution;
+	//p.x *= resolution.x/resolution.y;
+	//Draw little lines in the corners
+	float corners = corner(p);
+	p = translate(p, vec2( 0.0, resolution.y));
+	p = rotateCW(p, PI*0.5);
+	corners = merge(corners, corner(p));
+	p = translate(p, vec2( 0.0, resolution.x));
+	p = rotateCW(p, PI*0.5);
+	corners = merge(corners, corner(p));
+	p = translate(p, vec2( 0.0, resolution.y));
+	p = rotateCW(p, PI*0.5);
+	corners = merge(corners, corner(p));
+	
+	p = uv*resolution;
+	p = translate(p, resolution*0.5);
+	float wheel = semiCircleDist(rotateCW(p, PI*2.0/3.0), 100.0, 300.0, 1.5);
+	wheel = merge(wheel, semiCircleDist(rotateCW(p, PI*4.0/3.0), 100.0, 300.0, 1.5));
+	wheel = merge(wheel, semiCircleDist(rotateCW(p, PI*6.0/3.0), 100.0, 300.0, 1.5))*0.7;
+	
+	float lines = lineDist(p, vec2(0.0, 50.0), vec2(0.0, 80.0), 5.0);
+	for (float i=0.0;i<6.2;i+= 0.3) {
+		lines = merge(lines, lineDist(rotateCW(p, i), vec2(0.0, 50.0), vec2(0.0, 80.0), 1.0));
+	}
+	wheel = merge(wheel, lines);
+	wheel = merge(wheel, substract(circleDist(p, 10.0), circleDist(p, 11.0)));
+	
+	p = UV*resolution;
+	float icon = substract(circleDist(translate(p, mouse), 2.0), circleDist(translate(p, mouse), 3.0));
+	vec2 mousevec = mouse-resolution*0.5;
+	float mouse_dist = min(length(mousevec), 380.0);
+	float dot_dist = max(mouse_dist/7.0, 30.0);
+	p = p = uv*resolution;
+	p = translate(p, resolution*0.5);
+	float a = atan(mousevec.y, mousevec.x);
+	p = rotateCW(p, a);
+	
+	for (float i=110.0;i<mouse_dist;i += dot_dist) {
+		icon = merge(icon, circleDist(translate(p, vec2(i, 0.0)), 3.0));
+	}
+	
+	wheel = merge(wheel, icon);
+	COLOR.xyz *= exposure;
+	COLOR.a *= fill(merge(wheel, corners));
+	//COLOR.xyz *= COLOR.a;
+	
+}"
+
+[sub_resource type="ShaderMaterial" id="2"]
+shader = SubResource("1")
+shader_parameter/exposure = 1.0
+shader_parameter/mouse = Vector2(960, 540)
+shader_parameter/resolution = Vector2(1920, 1080)
+
+[sub_resource type="Shader" id="3"]
+code = "shader_type canvas_item;
+render_mode blend_premul_alpha;
+
+uniform sampler2D HUD;
+uniform float radius = 1.5;
+
+void fragment() {
+	vec4 color = vec4(0.0);
+	float v = SCREEN_PIXEL_SIZE.y;
+	color += texture(HUD, vec2( UV.x, UV.y - 4.0 * v * radius ) ) * 0.051;
+	color += texture(HUD, vec2( UV.x, UV.y - 3.0 * v * radius ) ) * 0.0918;
+	color += texture(HUD, vec2( UV.x, UV.y - 2.0 * v * radius ) ) * 0.12245;
+	color += texture(HUD, vec2( UV.x, UV.y - 1.0 * v * radius ) ) * 0.1531;
+	color += texture(HUD, vec2( UV.x, UV.y ) ) * 0.1633;
+	color += texture(HUD, vec2( UV.x, UV.y + 1.0 * v * radius ) ) * 0.1531;
+	color += texture(HUD, vec2( UV.x, UV.y + 2.0 * v * radius ) ) * 0.12245;
+	color += texture(HUD, vec2( UV.x, UV.y + 3.0 * v * radius ) ) * 0.0918;
+	color += texture(HUD, vec2( UV.x, UV.y + 4.0 * v * radius ) ) * 0.051;
+	COLOR = color;
+	
+	
+}"
+
+[sub_resource type="ShaderMaterial" id="4"]
+shader = SubResource("3")
+shader_parameter/radius = 1.0
+
+[sub_resource type="Shader" id="5"]
+code = "shader_type canvas_item;
+render_mode blend_premul_alpha;
+
+uniform sampler2D HUD;
+uniform float radius = 1.5;
+uniform float exposure;
+
+void fragment() {
+	vec4 color = vec4(0.0);
+	float h = SCREEN_PIXEL_SIZE.x;
+	color += texture( SCREEN_TEXTURE, vec2( UV.x - 4.0 * h * radius, UV.y ) ) * 0.051;
+	color += texture( SCREEN_TEXTURE, vec2( UV.x - 3.0 * h * radius, UV.y ) ) * 0.0918;
+	color += texture( SCREEN_TEXTURE, vec2( UV.x - 2.0 * h * radius, UV.y ) ) * 0.12245;
+	color += texture( SCREEN_TEXTURE, vec2( UV.x - 1.0 * h * radius, UV.y ) ) * 0.1531;
+	color += texture( SCREEN_TEXTURE, vec2( UV.x, UV.y ) ) * 0.1633;
+	color += texture( SCREEN_TEXTURE, vec2( UV.x + 1.0 * h * radius, UV.y ) ) * 0.1531;
+	color += texture( SCREEN_TEXTURE, vec2( UV.x + 2.0 * h * radius, UV.y ) ) * 0.12245;
+	color += texture( SCREEN_TEXTURE, vec2( UV.x + 3.0 * h * radius, UV.y ) ) * 0.0918;
+	color += texture( SCREEN_TEXTURE, vec2( UV.x + 4.0 * h * radius, UV.y ) ) * 0.051;
+	vec4 sdf = texture(HUD, UV);
+	color += sdf;
+	color.xyz *= exposure;
+	COLOR = color;
+	//COLOR.a = max(max(COLOR.x, COLOR.y), COLOR.z);
+}"
+
+[sub_resource type="ShaderMaterial" id="6"]
+shader = SubResource("5")
+shader_parameter/exposure = 1.0
+shader_parameter/radius = 1.0
+
+[sub_resource type="StandardMaterial3D" id="12"]
+transparency = 1
+shading_mode = 0
+albedo_texture_force_srgb = true
+
+[sub_resource type="Shader" id="8"]
+code = "shader_type spatial;
+render_mode blend_mix,depth_draw_opaque,cull_back,diffuse_burley,specular_schlick_ggx,unshaded, depth_test_disabled;
+uniform sampler2D texture_albedo;
+
+
+void fragment() {
+	vec2 base_uv = UV;
+	vec4 albedo_tex = texture(texture_albedo,base_uv);
+	ALBEDO = albedo_tex.rgb;
+	ALPHA = albedo_tex.a;
+}
+"
+
+[sub_resource type="ShaderMaterial" id="10"]
+render_priority = 0
+shader = SubResource("8")
+
+[sub_resource type="QuadMesh" id="11"]
+material = SubResource("10")
+size = Vector2(13.66, 7.68)
+
+[node name="HUD" type="Node3D"]
+script = ExtResource("1")
+
+[node name="SubViewport" type="SubViewport" parent="."]
+transparent_bg = true
+gui_disable_input = true
+size = Vector2i(1366, 768)
+render_target_clear_mode = 2
+render_target_update_mode = 3
+
+[node name="SDFs" type="ColorRect" parent="SubViewport"]
+material = SubResource("2")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.454902, 0.584314, 1, 1)
+
+[node name="Viewport2" type="SubViewport" parent="."]
+transparent_bg = true
+gui_disable_input = true
+size = Vector2i(1366, 768)
+render_target_update_mode = 0
+
+[node name="blurX" type="ColorRect" parent="Viewport2"]
+material = SubResource("4")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="screen" type="BackBufferCopy" parent="Viewport2"]
+copy_mode = 2
+rect = Rect2(0, 0, 1366, 768)
+
+[node name="blurY" type="ColorRect" parent="Viewport2/screen"]
+material = SubResource("6")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+material_override = SubResource("12")
+mesh = SubResource("11")

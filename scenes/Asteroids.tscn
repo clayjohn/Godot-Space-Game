@@ -1,0 +1,40 @@
+[gd_scene load_steps=6 format=3 uid="uid://cwtapwpxifp4h"]
+
+[ext_resource type="Script" path="res://scripts/Asteroids.gd" id="1_ka64c"]
+[ext_resource type="Shader" path="res://assets/shaders/Asteroids.gdshader" id="2_x3c5b"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_8kpnk"]
+radius = 4000.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_nperh"]
+render_priority = 0
+shader = ExtResource("2_x3c5b")
+
+[sub_resource type="SphereMesh" id="SphereMesh_e3q7r"]
+radius = 1000.0
+height = 2000.0
+
+[node name="Asteroids" type="Node3D"]
+script = ExtResource("1_ka64c")
+
+[node name="Area3d" type="Area3D" parent="."]
+monitorable = false
+
+[node name="CollisionShape3d" type="CollisionShape3D" parent="Area3d"]
+shape = SubResource("SphereShape3D_8kpnk")
+
+[node name="LOD" type="Area3D" parent="."]
+monitorable = false
+
+[node name="CollisionShape3d" type="CollisionShape3D" parent="LOD" groups=["asteroids"]]
+shape = SubResource("SphereShape3D_8kpnk")
+
+[node name="Label3d" type="Label3D" parent="."]
+
+[node name="MeshInstance3d" type="MeshInstance3D" parent="."]
+material_override = SubResource("ShaderMaterial_nperh")
+mesh = SubResource("SphereMesh_e3q7r")
+
+[connection signal="body_entered" from="Area3d" to="." method="_on_area_3d_body_entered"]
+[connection signal="body_entered" from="LOD" to="." method="_on_lod_body_entered"]
+[connection signal="body_exited" from="LOD" to="." method="_on_lod_body_exited"]

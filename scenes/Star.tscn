@@ -1,0 +1,235 @@
+[gd_scene load_steps=7 format=2]
+
+[ext_resource path="res://scripts/Star.gd" type="Script" id=1]
+
+[sub_resource type="Shader" id=1]
+
+code = "shader_type canvas_item;
+
+uniform vec2 resolution = vec2(1024, 512);
+
+vec3 hash( vec3 p ) // replace this by something better. really. do
+{
+	p = vec3( dot(p,vec3(127.1,311.7, 74.7)),
+			  dot(p,vec3(269.5,183.3,246.1)),
+			  dot(p,vec3(113.5,271.9,124.6)));
+
+	return -1.0 + 2.0*fract(sin(p)*43758.5453123);
+}
+
+// return value noise (in x) and its derivatives (in yzw)
+vec4 noised( in vec3 x )
+{
+    // grid
+    vec3 p = floor(x);
+    vec3 w = fract(x);
+    
+    // quintic interpolant
+    vec3 u = w*w*w*(w*(w*6.0-15.0)+10.0);
+    vec3 du = 30.0*w*w*(w*(w-2.0)+1.0);
+    
+    // gradients
+    vec3 ga = hash( p+vec3(0.0,0.0,0.0) );
+    vec3 gb = hash( p+vec3(1.0,0.0,0.0) );
+    vec3 gc = hash( p+vec3(0.0,1.0,0.0) );
+    vec3 gd = hash( p+vec3(1.0,1.0,0.0) );
+    vec3 ge = hash( p+vec3(0.0,0.0,1.0) );
+	vec3 gf = hash( p+vec3(1.0,0.0,1.0) );
+    vec3 gg = hash( p+vec3(0.0,1.0,1.0) );
+    vec3 gh = hash( p+vec3(1.0,1.0,1.0) );
+    
+    // projections
+    float va = dot( ga, w-vec3(0.0,0.0,0.0) );
+    float vb = dot( gb, w-vec3(1.0,0.0,0.0) );
+    float vc = dot( gc, w-vec3(0.0,1.0,0.0) );
+    float vd = dot( gd, w-vec3(1.0,1.0,0.0) );
+    float ve = dot( ge, w-vec3(0.0,0.0,1.0) );
+    float vf = dot( gf, w-vec3(1.0,0.0,1.0) );
+    float vg = dot( gg, w-vec3(0.0,1.0,1.0) );
+    float vh = dot( gh, w-vec3(1.0,1.0,1.0) );
+	
+    // interpolations
+    return vec4( va + u.x*(vb-va) + u.y*(vc-va) + u.z*(ve-va) + u.x*u.y*(va-vb-vc+vd) + u.y*u.z*(va-vc-ve+vg) + u.z*u.x*(va-vb-ve+vf) + (-va+vb+vc-vd+ve-vf-vg+vh)*u.x*u.y*u.z,    // value
+                 ga + u.x*(gb-ga) + u.y*(gc-ga) + u.z*(ge-ga) + u.x*u.y*(ga-gb-gc+gd) + u.y*u.z*(ga-gc-ge+gg) + u.z*u.x*(ga-gb-ge+gf) + (-ga+gb+gc-gd+ge-gf-gg+gh)*u.x*u.y*u.z +   // derivatives
+                 du * (vec3(vb,vc,ve) - va + u.yzx*vec3(va-vb-vc+vd,va-vc-ve+vg,va-vb-ve+vf) + u.zxy*vec3(va-vb-ve+vf,va-vb-vc+vd,va-vc-ve+vg) + u.yzx*u.zxy*(-va+vb+vc-vd+ve-vf-vg+vh) ));
+}
+
+vec3 voronoi( in vec3 x )
+{
+    vec3 p = floor( x );
+    vec3 f = fract( x );
+
+	float id = 0.0;
+    vec2 res = vec2( 100.0 );
+    for( int k=-1; k<=1; k++ )
+    for( int j=-1; j<=1; j++ )
+    for( int i=-1; i<=1; i++ )
+    {
+        vec3 b = vec3( float(i), float(j), float(k) );
+        vec3 r = vec3( b ) - f + hash( p + b )*0.5+0.5;
+        float d = dot( r, r );
+
+        if( d < res.x )
+        {
+			id = dot( p+b, vec3(1.0,57.0,113.0 ) );
+            res = vec2( d, res.x );
+        }
+        else if( d < res.y )
+        {
+            res.y = d;
+        }
+    }
+
+    return vec3( sqrt( res ), abs(id) );
+}
+
+void fragment() {
+	float theta = UV.y*3.14159;
+	float phi = UV.x*3.14159*2.0;
+	vec3 unit = vec3(0,0,0);
+
+	unit.x = sin(phi) * sin(theta) * -1.0;
+	unit.y = cos(theta) * -1.0;
+	unit.z = cos(phi) * sin(theta) * -1.0;
+	unit = normalize(unit);
+	vec4 col = noised(unit*4.0)*0.5+noised(unit*8.0)*0.25+noised(unit*16.0)*0.125+noised(unit*32.0)*0.0625;
+	COLOR.xyz = mix(vec3(0.7, 0.4, 0.7), vec3(1.0, 0.3, 0.2), smoothstep(0.4, 0.44, col.x*0.5+0.5));
+	COLOR.a = 1.0;
+}"
+_sections_unfolded = [ "Resource" ]
+
+[sub_resource type="ShaderMaterial" id=2]
+
+render_priority = 0
+shader = SubResource( 1 )
+shader_param/resolution = null
+_sections_unfolded = [ "Resource" ]
+
+[sub_resource type="Shader" id=3]
+
+code = "shader_type spatial;
+render_mode blend_mix,depth_draw_opaque,cull_back,diffuse_burley,specular_schlick_ggx;
+uniform vec4 albedo : source_color;
+uniform sampler2D texture_albedo : source_color;
+
+uniform sampler2D texture_emission : hint_default_black;
+uniform vec4 emission : source_color;
+uniform float emission_energy;
+
+
+
+void vertex() {
+	UV=UV;
+}
+
+
+
+
+void fragment() {
+	vec2 base_uv = UV;
+	vec4 albedo_tex = texture(texture_albedo,base_uv);
+	ALBEDO = albedo.rgb * albedo_tex.rgb;
+	EMISSION = emission.rgb*emission_energy*albedo_tex.x;
+	
+}
+"
+
+[sub_resource type="ShaderMaterial" id=4]
+
+render_priority = 0
+shader = SubResource( 3 )
+shader_param/albedo = Color( 1, 0.857971, 0.300781, 1 )
+shader_param/emission = Color( 1, 0.945098, 0.705882, 1 )
+shader_param/emission_energy = 2.0
+_sections_unfolded = [ "shader_param" ]
+
+[sub_resource type="SphereMesh" id=5]
+
+radius = 1.0
+height = 2.0
+radial_segments = 64
+rings = 32
+is_hemisphere = false
+
+[node name="Star" type="Node3D" index="0"]
+script = ExtResource( 1 )
+
+[node name="SubViewport" type="SubViewport" parent="." index="0"]
+arvr = false
+size = Vector2( 1024, 512 )
+own_world = false
+world = null
+transparent_bg = false
+msaa = 0
+hdr = false
+disable_3d = false
+usage = 2
+debug_draw = 0
+render_target_v_flip = false
+render_target_clear_mode = 0
+render_target_update_mode = 1
+audio_listener_enable_2d = false
+audio_listener_enable_3d = false
+physics_object_picking = false
+gui_disable_input = false
+gui_snap_controls_to_pixels = true
+shadow_atlas_size = 0
+shadow_atlas_quad_0 = 2
+shadow_atlas_quad_1 = 2
+shadow_atlas_quad_2 = 3
+shadow_atlas_quad_3 = 4
+_sections_unfolded = [ "Render Target" ]
+
+[node name="ColorRect" type="ColorRect" parent="SubViewport" index="0"]
+material = SubResource( 2 )
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+pivot_offset = Vector2( 0, 0 )
+clip_contents = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+color = Color( 1, 1, 1, 1 )
+_sections_unfolded = [ "Anchor", "Margin", "Material" ]
+
+[node name="Surface" type="MeshInstance3D" parent="." index="1"]
+transform = Transform3D( 100, 0, 0, 0, 100, 0, 0, 0, 100, 0, 0, 0 )
+layers = 1
+material_override = SubResource( 4 )
+cast_shadow = 0
+extra_cull_margin = 0.0
+use_in_baked_light = false
+lod_min_distance = 0.0
+lod_min_hysteresis = 0.0
+lod_max_distance = 0.0
+lod_max_hysteresis = 0.0
+mesh = SubResource( 5 )
+skeleton = NodePath("..")
+material/0 = null
+_sections_unfolded = [ "Geometry2D", "Transform3D", "material" ]
+
+[node name="OmniLight3D" type="OmniLight3D" parent="." index="2"]
+transform = Transform3D( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.340781 )
+layers = 1
+light_color = Color( 1, 0.964706, 0.705882, 1 )
+light_energy = 8.0
+light_indirect_energy = 1.0
+light_negative = false
+light_specular = 0.5
+light_bake_mode = 1
+light_cull_mask = -1
+shadow_enabled = false
+shadow_color = Color( 0, 0, 0, 1 )
+shadow_bias = 0.15
+shadow_contact = 0.0
+shadow_reverse_cull_face = false
+editor_only = false
+omni_range = 10000.0
+omni_attenuation = 0.0544095
+omni_shadow_mode = 0
+omni_shadow_detail = 1
+_sections_unfolded = [ "Light3D", "Omni" ]
+

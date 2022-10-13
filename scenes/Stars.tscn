@@ -1,0 +1,68 @@
+[gd_scene load_steps=4 format=2]
+
+[ext_resource path="res://scripts/Stars.gd" type="Script" id=1]
+
+[sub_resource type="Shader" id=1]
+
+code = "shader_type spatial;
+render_mode unshaded, blend_add;
+
+uniform sampler2D nebula;
+uniform float exposure;
+
+varying vec4 VAR1;
+
+void vertex() {
+	POINT_SIZE = 20.0*UV.x;
+	VAR1.xyz = normalize(VERTEX.xyz);
+	VAR1.w = POINT_SIZE;
+}
+
+float shape(float x, float k) {
+	float h = x/k;
+	return x*x*(3.0-2.0*x);
+}
+float expstep(float x, float n, float k) {
+	return exp(-k*pow(x, n))*(1.0-x);
+}
+
+
+void fragment() {
+	float mask = 2.0*length(POINT_COORD-vec2(0.5));
+	mask = max(expstep(mask, 0.5, 6.0+3.0*UV.y), 0.0);
+	vec2 uv = vec2(0.5-0.5*(atan(VAR1.x, VAR1.z)/(3.14159)), 1.0-acos(-VAR1.y)/3.14159);
+	vec4 density = texture(nebula, uv);
+	ALPHA =  mask * smoothstep(0.0, 1.0, 1.0 - density.a);
+	vec3 col = (COLOR.xyz+ pow(density.xyz, vec3(0.45))*density.a/(UV.y+0.01)); 
+	ALBEDO = exposure*mix(vec3(0.55), vec3(1.0), col)/(UV.y+0.3); //wash out the colors even more
+}"
+
+[sub_resource type="ShaderMaterial" id=2]
+
+render_priority = 0
+shader = SubResource( 1 )
+shader_param/exposure = 2.0
+_sections_unfolded = [ "shader_param" ]
+
+[node name="Stars" type="MeshInstance3D" index="0"]
+transform = Transform3D( 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, -10 )
+layers = 1
+material_override = SubResource( 2 )
+cast_shadow = 1
+extra_cull_margin = 0.0
+use_in_baked_light = false
+lod_min_distance = 0.0
+lod_min_hysteresis = 0.0
+lod_max_distance = 0.0
+lod_max_hysteresis = 0.0
+mesh = null
+skeleton = NodePath("..")
+script = ExtResource( 1 )
+_sections_unfolded = [ "Geometry2D", "Transform3D", "Visibility" ]
+OBA1 = Color( 0.470588, 0.627451, 1, 1 )
+OBA2 = Color( 0.780392, 0.976471, 1, 1 )
+FG1 = Color( 1, 0.996078, 0.909804, 1 )
+FG2 = Color( 1, 0.980392, 0.788235, 1 )
+KM1 = Color( 1, 0.764706, 0.494118, 1 )
+KM2 = Color( 1, 0.447059, 0.372549, 1 )
+

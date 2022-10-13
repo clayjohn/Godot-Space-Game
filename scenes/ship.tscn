@@ -1,0 +1,30 @@
+[gd_scene load_steps=5 format=3 uid="uid://wbogr8lln1n5"]
+
+[ext_resource type="Script" path="res://scripts/ship.gd" id="1"]
+[ext_resource type="PackedScene" uid="uid://ct3tly6fhuceq" path="res://assets/ships/Bob/glTF/Bob.gltf" id="2_xpv0d"]
+
+[sub_resource type="BoxMesh" id="1"]
+size = Vector3(0.6, 0.2, 1)
+
+[sub_resource type="BoxShape3D" id="3"]
+
+[node name="Ship" type="CharacterBody3D"]
+script = ExtResource("1")
+max_speed = 100.0
+
+[node name="Body" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.276162, 0)
+visible = false
+mesh = SubResource("1")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("3")
+
+[node name="Camera3D Target" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.603884, -2.06622)
+
+[node name="Camera3D Position" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.983562, 1.59094)
+
+[node name="Bob" parent="." instance=ExtResource("2_xpv0d")]
+transform = Transform3D(-0.3, 0, -4.52987e-08, 0, 0.3, 0, 4.52987e-08, 0, -0.3, 0, 0.23709, 0.0391614)

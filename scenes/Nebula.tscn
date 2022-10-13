@@ -1,0 +1,282 @@
+[gd_scene load_steps=4 format=3 uid="uid://dea8yd3pndf20"]
+
+[ext_resource type="Script" path="res://scripts/Nebula.gd" id="1"]
+
+[sub_resource type="Shader" id="1"]
+code = "	shader_type canvas_item;
+	
+	uniform vec2 resolution = vec2(2048, 1024);
+	uniform float seed = 0.0;
+	uniform float density;
+	uniform vec3 attenuation;
+	uniform vec3 light;
+	uniform vec3 cloud_color;
+	
+	vec3 hash( vec3 p ) // replace this by something better. really. do
+	{
+		p = vec3( dot(p,vec3(127.1,311.7, 74.7)),
+				  dot(p,vec3(269.5,183.3,246.1)),
+				  dot(p,vec3(113.5,271.9,124.6)));
+	
+		return -1.0 + 2.0*fract(seed+sin(p)*43758.5453123);
+	}
+	
+	// return value noise (in x) and its derivatives (in yzw)
+	vec4 noised( in vec3 x )
+	{
+	    // grid
+	    vec3 p = floor(x);
+	    vec3 w = fract(x);
+	    
+	    // quintic interpolant
+	    vec3 u = w*w*w*(w*(w*6.0-15.0)+10.0);
+	    vec3 du = 30.0*w*w*(w*(w-2.0)+1.0);
+	    
+	    // gradients
+	    vec3 ga = hash( p+vec3(0.0,0.0,0.0) );
+	    vec3 gb = hash( p+vec3(1.0,0.0,0.0) );
+	    vec3 gc = hash( p+vec3(0.0,1.0,0.0) );
+	    vec3 gd = hash( p+vec3(1.0,1.0,0.0) );
+	    vec3 ge = hash( p+vec3(0.0,0.0,1.0) );
+		vec3 gf = hash( p+vec3(1.0,0.0,1.0) );
+	    vec3 gg = hash( p+vec3(0.0,1.0,1.0) );
+	    vec3 gh = hash( p+vec3(1.0,1.0,1.0) );
+	    
+	    // projections
+	    float va = dot( ga, w-vec3(0.0,0.0,0.0) );
+	    float vb = dot( gb, w-vec3(1.0,0.0,0.0) );
+	    float vc = dot( gc, w-vec3(0.0,1.0,0.0) );
+	    float vd = dot( gd, w-vec3(1.0,1.0,0.0) );
+	    float ve = dot( ge, w-vec3(0.0,0.0,1.0) );
+	    float vf = dot( gf, w-vec3(1.0,0.0,1.0) );
+	    float vg = dot( gg, w-vec3(0.0,1.0,1.0) );
+	    float vh = dot( gh, w-vec3(1.0,1.0,1.0) );
+		
+	    // interpolations
+	    return vec4( va + u.x*(vb-va) + u.y*(vc-va) + u.z*(ve-va) + u.x*u.y*(va-vb-vc+vd) + u.y*u.z*(va-vc-ve+vg) + u.z*u.x*(va-vb-ve+vf) + (-va+vb+vc-vd+ve-vf-vg+vh)*u.x*u.y*u.z,    // value
+	                 ga + u.x*(gb-ga) + u.y*(gc-ga) + u.z*(ge-ga) + u.x*u.y*(ga-gb-gc+gd) + u.y*u.z*(ga-gc-ge+gg) + u.z*u.x*(ga-gb-ge+gf) + (-ga+gb+gc-gd+ge-gf-gg+gh)*u.x*u.y*u.z +   // derivatives
+	                 du * (vec3(vb,vc,ve) - va + u.yzx*vec3(va-vb-vc+vd,va-vc-ve+vg,va-vb-ve+vf) + u.zxy*vec3(va-vb-ve+vf,va-vb-vc+vd,va-vc-ve+vg) + u.yzx*u.zxy*(-va+vb+vc-vd+ve-vf-vg+vh) ));
+	}
+	
+	vec3 voronoi( in vec3 x )
+	{
+	    vec3 p = floor( x );
+	    vec3 f = fract( x );
+	
+		float id = 0.0;
+	    vec2 res = vec2( 100.0 );
+	    for( int k=-1; k<=1; k++ )
+	    for( int j=-1; j<=1; j++ )
+	    for( int i=-1; i<=1; i++ )
+	    {
+	        vec3 b = vec3( float(i), float(j), float(k) );
+	        vec3 r = vec3( b ) - f + hash( p + b )*0.5+0.5;
+	        float d = dot( r, r );
+	
+	        if( d < res.x )
+	        {
+				id = dot( p+b, vec3(1.0,57.0,113.0 ) );
+	            res = vec2( d, res.x );
+	        }
+	        else if( d < res.y )
+	        {
+	            res.y = d;
+	        }
+	    }
+	
+	    return vec3( sqrt( res ), abs(id) );
+	}
+
+	//=====================================
+	// otaviogood's noise from https://www.shadertoy.com/view/ld2SzK
+	//--------------------------------------------------------------
+	// This spiral noise works by successively adding and rotating sin waves while increasing frequency.
+	// It should work the same checked all computers since it's not based checked a hash function like some other noises.
+	// It can be much faster than other noise functions if you're ok with some repetition.
+	float SpiralNoiseC(vec3 p)
+	{
+		float nudge = 0.739513;	// size of perpendicular vector
+		float normalizer = 1.0 / sqrt(1.0 + nudge*nudge);	// pythagorean theorem checked that perpendicular to maintain scale
+	
+	    float n = 0.0;	// noise amount
+	    float iter = 1.0;
+	    for (int i = 0; i < 8; i++)
+	    {
+	        // add sin and cos scaled inverse with the frequency
+	        n += -abs(sin(p.y*iter) + cos(p.x*iter)) / iter;	// abs for a ridged look
+	        // rotate by adding perpendicular and scaling down
+	        p.xy += vec2(p.y, -p.x) * nudge;
+	        p.xy *= normalizer;
+	        // rotate checked other axis
+	        p.xz += vec2(p.z, -p.x) * nudge;
+	        p.xz *= normalizer;
+	        // increase the frequency
+	        iter *= 1.733733;
+	    }
+	    return n;
+	}
+	
+	float SpiralNoise3D(vec3 p)
+	{
+		float nudge = 0.739513;	// size of perpendicular vector
+		float normalizer = 1.0 / sqrt(1.0 + nudge*nudge);	// pythagorean theorem checked that perpendicular to maintain scale
+	
+	    float n = 0.0;
+	    float iter = 1.0;
+	    for (int i = 0; i < 5; i++)
+	    {
+	        n += (sin(p.y*iter) + cos(p.x*iter)) / iter;
+	        p.xz += vec2(p.z, -p.x) * nudge;
+	        p.xz *= normalizer;
+	        iter *= 1.33733;
+	    }
+	    return n;
+	}
+	
+	float NebulaNoise(vec3 p)
+	{
+	   float final = noised(p).x*2.5;
+	    final -= SpiralNoiseC(p.xyz);   // mid-range noise
+	    final += SpiralNoiseC(p.zxy*0.5123+100.0)*4.0;   // large scale features
+	    final -= SpiralNoise3D(p);   // more large scale features, but 3d
+	
+	    return abs(-final)/10.0;
+	}
+	float map(vec3 p){
+	 return NebulaNoise(p);
+	}
+	
+	vec2 rot2D(vec2 p, float angle) {
+	 
+	    angle = radians(angle);
+	    float s = sin(angle);
+	    float c = cos(angle);
+	    
+	    return p * mat2(vec2(c,s),vec2(-s,c));
+	    
+	}
+	
+	
+	void fragment() {
+		float theta = UV.y*3.14159;
+		float phi = UV.x*3.14159*2.0;
+		vec3 unit = vec3(0,0,0);
+	
+		unit.x = sin(phi) * sin(theta) * -1.0;
+		unit.y = cos(theta) * -1.0;
+		unit.z = cos(phi) * sin(theta) * -1.0;
+		unit = normalize(unit);
+		
+		vec3 rd = unit;
+		vec3 ro = vec3(20.0*seed);
+	
+	    // Placing a light in front of the viewer and up a little, then rotating it in sync
+	    // with the camera. I guess a light beam from a flying vehicle would do this.
+	    vec3 lp = light;
+	    lp += ro;
+	
+	    // Local density, total density, and weighting factor.
+	    float lDe = 0.0;
+		float td = 0.0;
+		float w = 0.0;
+	
+	    // Closest surface distance, and total ray distance travelled.
+	    float d = 1.0;
+		float t = 0.0;
+	
+	    // Distance threshold. Higher numbers give thicker clouds, but fill up the screen too much.
+	    float h = 0.4+0.6*density;
+	
+	    // Initializing the scene color to black, and declaring the surface position vector.
+	    vec3 col = vec3(0.0);
+		vec3 sp;
+	
+	    // Particle surface normal.
+	    //
+	    // Here's my hacky reasoning. I'd imagine you're going to hit the particle front checked, so the normal
+	    // would just be the opposite of the unit direction ray. However particles are particles, so there'd
+	    // be some randomness attached... Yeah, I'm not buying it either. :)
+	    vec3 sn = normalize(-rd);
+	
+	    // Raymarching loop.
+	    for (int i=0; i<14; i++) {
+	
+	        // Loop break conditions. Seems to work, but let me
+	        // know if I've overlooked something.
+	        if((td>1.0) || d<0.001*t || t>80.0)break;
+	
+	
+	        sp = ro + rd*t; // Current ray position.
+	        d = map(sp); // Closest distance to the surface... particle.
+	
+	        // If we get within a certain distance, \"h,\" of the surface, accumulate some surface values.
+	        // The \"step\" function is a branchless way to do an if statement, in case you're wondering.
+	        //
+	        // Values further away have less influence checked the total. When you accumulate layers, you'll
+	        // usually need some kind of weighting algorithm based checked some identifying factor - in this
+	        // case, it's distance. This is one of many ways to do it. In fact, you'll see variations checked
+	        // the following lines all over the place.
+	        //
+	        lDe = (h - d)*step(d, h);
+	        w = (1.0 - td)*lDe;
+	
+	        // Use the weighting factor to accumulate density. How you do this is up to you.
+	        td += w*w*8.0 + 1.0/64.0; //w*w*5. + 1./50.;
+	        //td += w*.4 + 1./45.; // Looks cleaner, but a little washed out.
+	
+	
+	        // Point light calculations.
+	        vec3 ld = lp-sp; // Direction vector from the surface to the light position.
+	        float lDist = max(length(ld), 0.001); // Distance from the surface to the light.
+	        ld/=lDist; // Normalizing the directional light vector.
+	
+	        // Using the light distance to perform some falloff.
+	        float atten = 1.0/(1.0 + lDist*0.125 + lDist*lDist*0.05);
+	
+	        // Ok, these don't entirely correlate with tracing through transparent particles,
+	        // but they add a little anglular based highlighting in order to fake proper lighting...
+	        // if that makes any sense. I wouldn't be surprised if the specular term isn't needed,
+	        // or could be taken outside the loop.
+	        float diff = max(dot( sn, ld ), 0.0);
+	        float spec = pow(max( dot( reflect(-ld, sn), -rd ), 0.0 ), 4.0);
+	
+	
+	        // Accumulating the color. Note that I'm only adding a scalar value, in this case,
+	        // but you can add color combinations. Note the \"d*3. - .1\" term. It's there as a bit
+	        // of a fudge to make the clouds a bit more shadowy.
+	        col += w*(d*3.0 - 0.1)*(0.5 + diff * vec3(1.0, 0.96, 0.95) + spec*0.5)*atten;
+	
+	        t +=  max(d*0.5, 0.02);
+	
+	    }
+	
+	    col = max(col, vec3(0.0));
+	    col = mix(pow(cloud_color*col,  attenuation), col, dot(cos(rd*6.0 +sin(rd.yzx*6.0)), vec3(.333))*.35 + .65);
+	    col = mix(col.zyx, col, dot(cos(rd*9.0 +sin(rd.yzx*9.0)), vec3(0.333))*0.15 + 0.85);//xzy
+		col = pow(col, vec3(2.2));
+		//vec4 col = noised(unit*4.0)*0.5+noised(unit*8.0)*0.25+noised(unit*16.0)*0.125+noised(unit*32.0)*0.0625;
+		COLOR.xyz = col;
+		COLOR.a = td;
+		COLOR.xyz = mix(vec3(1.0), COLOR.xyz, smoothstep(0.0, 0.1, td));
+	}"
+
+[sub_resource type="ShaderMaterial" id="2"]
+shader = SubResource("1")
+shader_parameter/attenuation = null
+shader_parameter/cloud_color = null
+shader_parameter/density = null
+shader_parameter/light = null
+shader_parameter/resolution = null
+shader_parameter/seed = null
+
+[node name="Nebula" type="SubViewport"]
+transparent_bg = true
+size = Vector2i(2048, 1024)
+render_target_update_mode = 0
+script = ExtResource("1")
+
+[node name="ColorRect" type="ColorRect" parent="."]
+material = SubResource("2")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
